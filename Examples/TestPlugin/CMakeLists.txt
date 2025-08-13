@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(TestPlugin)
 
 set(PLUGIN_NAME TestPlugin)
+set(CMAKE_CXX_STANDARD 20 REQUIRED)
 
 add_subdirectory(Ext)
 
@@ -15,7 +16,6 @@ add_library(${PROJECT_NAME} SHARED
 target_link_libraries(${PROJECT_NAME} PUBLIC
     glad
     SBPluginSDK
-    sdl2
     )
 
 set_target_properties(${PROJECT_NAME}

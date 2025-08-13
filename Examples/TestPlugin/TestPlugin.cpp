@@ -1,9 +1,33 @@
 #include "TestPlugin.h"
 #include <cstdio>
 #include "glad/gl.h"
-#include "SDL2/SDL_video.h"
 #include "TestShader.h"
 #include "TestPluginImage.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#include <gl/gl.h>
+#else
+#include <GL/glx.h>
+#endif
+
+namespace {
+#ifdef _WIN32
+void *getProcAddress(const char *name)
+{
+    static HMODULE lib = LoadLibraryA("opengl32.dll");
+    if (!lib) {
+        return nullptr;
+    }
+    if (auto func = GetProcAddress(lib, name)) {
+        return (void *)func;
+    }
+    return (void *)wglGetProcAddress(name);
+}
+#else
+void *getProcAddress(const char *name) { return (void *)glXGetProcAddress((const GLubyte *)name); }
+#endif
+} // namespace
 
 SBNode *createSBPluginNode2(SBHost *host) { return new TestPlugin(host); }
 
@@ -106,7 +130,7 @@ void TestPlugin::processAudio(int samples)
 void TestPlugin::processImage(const SBImageInfo &inputImage, bool recreateImage)
 {
     if (!mGladInited) {
-        if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
+        if (!gladLoadGL((GLADloadfunc)getProcAddress)) {
             printf("gladLoadGL failed\n");
             return;
         }
