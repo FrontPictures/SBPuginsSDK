@@ -7,8 +7,8 @@ set(PLUGIN_NAME TestPlugin)
 add_subdirectory(Ext)
 
 add_library(${PROJECT_NAME} SHARED
-    TestImage.cpp TestImage.h
     TestPlugin.cpp TestPlugin.h
+    TestPluginImage.cpp TestPluginImage.h
     TestShader.cpp TestShader.h
     )
 

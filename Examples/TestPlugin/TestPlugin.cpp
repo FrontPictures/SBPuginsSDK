@@ -3,88 +3,107 @@
 #include "glad/gl.h"
 #include "SDL2/SDL_video.h"
 #include "TestShader.h"
-#include "TestImage.h"
+#include "TestPluginImage.h"
 
-SBNode *createSBPluginNode() { return new TestPlugin(); }
+SBNode *createSBPluginNode2(SBHost *host) { return new TestPlugin(host); }
 
-TestPlugin::TestPlugin() = default;
+TestPlugin::TestPlugin(SBHost *host) : mHost(host)
+{
+    mIncreaseCounterPar = mHost->addInputParameter(SBParameter::type_action, "Increase Counter");
+    mInputImagePar = mHost->addInputParameter(SBParameter::type_image, "Input Image");
+    mInitialValuePar = mHost->addInputParameter(SBParameter::type_int, "Initial value");
+    mPrefixPar = mHost->addInputParameter(SBParameter::type_string, "Prefix");
+    mInputMessagesPar = mHost->addInputParameter(SBParameter::type_messages, "Input Messages");
+    mHost->addInputParameter(SBParameter::type_double, "Audio Volume",
+                             {.doubleValue = mAudioVolume});
+    mHost->addInputParameter(SBParameter::type_audio, "Audio Input");
+    mRecreateOutputImagePar = mHost->addInputParameter(SBParameter::type_action,
+                                                       "Recreate Output Image");
+    mHost->addInputParameter(SBParameter::type_double, "Dummy", {.doubleValue = 2.5});
+
+    mHost->addOutputParameter(SBParameter::type_int, "Counter", {.intValue = mCounter});
+    mHost->addOutputParameter(SBParameter::type_string, "Counter String");
+    mHost->addOutputParameter(SBParameter::type_image, "Output Image");
+    mHost->addOutputParameter(SBParameter::type_image, "Output Image 2d");
+    mHost->addOutputParameter(SBParameter::type_int, "Swaps Counter", {.intValue = mSwapsCounter});
+    mHost->addOutputParameter(SBParameter::type_messages, "Output Plugin Events");
+    mHost->addOutputParameter(SBParameter::type_messages, "Output Button Events");
+    mHost->addOutputParameter(SBParameter::type_audio, "Audio Output");
+}
 
 TestPlugin::~TestPlugin() = default;
 
-size_t TestPlugin::getNumberOfInputs() const { return 3; }
-
-void TestPlugin::fillInputInfo(SBParameters inputs) const
+void TestPlugin::process()
 {
-    if (inputs.count != getNumberOfInputs() || !inputs.parameters) {
-        printf("invalid count\n");
-        return;
+    if (mPrefixPar->changed) {
+        mPrefix = mPrefixPar->value.string;
+        setCounter(mPrefix, mCounter);
+        mHost->log("Prefix changed");
     }
-    inputs.parameters[0].type = SBParameter::type_action;
-    inputs.parameters[0].name = "Increase Counter";
 
-    inputs.parameters[1].type = SBParameter::type_image;
-    inputs.parameters[1].name = "Input Image";
-
-    inputs.parameters[2].type = SBParameter::type_int;
-    inputs.parameters[2].name = "Initial value";
-}
-
-size_t TestPlugin::getNumberOfOutputs() const { return 4; }
-
-void TestPlugin::fillOutputInfo(SBParameters outputs) const
-{
-    if (outputs.count != 4 || !outputs.parameters) {
-        printf("invalid count\n");
-        return;
-    }
-    outputs.parameters[0].type = SBParameter::type_int;
-    outputs.parameters[0].name = "Counter";
-    outputs.parameters[0].value.intValue = mCounter;
-
-    outputs.parameters[1].type = SBParameter::type_string;
-    outputs.parameters[1].name = "Counter String";
-    outputs.parameters[1].value.string = mCounterString.c_str();
-
-    outputs.parameters[2].type = SBParameter::type_image;
-    outputs.parameters[2].name = "Output Image";
-
-    outputs.parameters[3].type = SBParameter::type_int;
-    outputs.parameters[3].name = "Swaps Counter";
-    outputs.parameters[3].value.intValue = mSwapsCounter;
-}
-
-void TestPlugin::process(SBParameters inputs, SBParameters outputs)
-{
-    if (inputs.count != getNumberOfInputs() || !inputs.parameters
-        || outputs.count != getNumberOfOutputs() || !outputs.parameters) {
-        printf("invalid inputs/outputs\n");
-        return;
-    }
     if (!mInited) {
-        setCounter(inputs.parameters[2].value.intValue);
+        setCounter(mPrefix, mInitialValuePar->value.intValue);
         emitState();
         mInited = true;
+        mHost->log("Test Plugin Initialized");
     }
 
     processMessages();
 
-    if (inputs.parameters[0].value.action) {
-        setCounter(mCounter + 1);
+    if (mIncreaseCounterPar->value.action) {
+        setCounter(mPrefix, mCounter + 1);
         emitState();
+        mHost->log("Counter increased by input button parameter");
+        mHost->pushOutputParameterMessageEvent("Output Plugin Events", "TestPluginEvent");
+        mHost->pushOutputParameterMessageJson("Output Button Events",
+                                              "[100,[\"TestButtonEvent\"]]");
     }
-    outputs.parameters[0].value.intValue = mCounter;
-    outputs.parameters[1].value.string = mCounterString.c_str();
+    while (int size = mHost->getNextInputParameterMessageSize("Input Messages")) {
+        std::string msg;
+        msg.resize(size);
+        mHost->popNextInputParameterMessage("Input Messages", msg.data(), msg.size());
+        mHost->log("Received a message:");
+        mHost->log(msg.c_str());
+        if (msg == "[100,[\"Button\"]]") {
+            setCounter(mPrefix, mCounter + 1);
+            emitState();
+            mHost->log("Counter increased by input message event from a button");
+        } else {
+            mHost->logError("Unknown message");
+        }
+    }
 
-    processImage(inputs.parameters[1].value.imageInfo, outputs.parameters[2].value.imageInfo);
-    outputs.parameters[3].value.intValue = mSwapsCounter;    
+    auto *volumePar = mHost->getInputParameter("Audio Volume");
+    if (volumePar->changed) {
+        mAudioVolume = volumePar->value.doubleValue;
+    }
+
+    mHost->setOutputParameter("Counter", {.intValue = mCounter});
+    mHost->setOutputParameter("Counter String", {.string = mCounterString.c_str()});
+
+    processImage(mInputImagePar->value.imageInfo, mRecreateOutputImagePar->value.action);
+    mHost->setOutputParameter("Swaps Counter", {.intValue = mSwapsCounter});
 }
 
-void TestPlugin::contextBuffersSwapped()
+void TestPlugin::contextBuffersSwapped() { mSwapsCounter++; }
+
+void TestPlugin::processAudio(int samples)
 {
-    mSwapsCounter++;
+    int channels = mHost->getInputAudioChannels("Audio Input");
+    mHost->setOutputAudioChannels("Audio Output", channels);
+
+    std::vector<float> buffer;
+    buffer.resize(samples);
+    for (int i = 0; i < channels; ++i) {
+        mHost->readInputAudio("Audio Input", i, buffer.data(), buffer.size());
+        for (auto &value : buffer) {
+            value *= mAudioVolume;
+        }
+        mHost->writeOutputAudio("Audio Output", i, buffer.data(), buffer.size());
+    }
 }
 
-void TestPlugin::processImage(const SBImageInfo &inputImage, SBImageInfo &outputImage)
+void TestPlugin::processImage(const SBImageInfo &inputImage, bool recreateImage)
 {
     if (!mGladInited) {
         if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
@@ -103,63 +122,84 @@ void TestPlugin::processImage(const SBImageInfo &inputImage, SBImageInfo &output
     if (!mShader) {
         mShader = std::unique_ptr<TestShader>(new TestShader());
     }
+    if (mImage && recreateImage) {
+        mPrevImage = std::move(mImage);
+        mPrevImage->renderBegin();
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        mPrevImage->renderEnd();
+        mImage = {};
+        mImage2d = {};
+    }
+
     if (mImage
         && (mImage->getWidth() != inputImage.width || mImage->getHeight() != inputImage.height)) {
         mImage = {};
-        outputImage = {};
+        mImage2d = {};
+        mOutputImageInfo = {};
     }
     if (!mImage) {
-        if (!mHost) {
-            printf("Error: no host\n");
-            return;
-        }
         mHost->disableWatchdogTimer(30);
-        mImage = std::unique_ptr<TestImage>(new TestImage(inputImage.width, inputImage.height));
-        outputImage.textureId = mImage->getTextureId();
-        outputImage.width = mImage->getWidth();
-        outputImage.height = mImage->getHeight();
-        outputImage.numChannels = 4;
-        outputImage.dataType = SBImageInfo::type_uint8;
-        outputImage.textureType = SBImageInfo::texture_rectangle;
-        outputImage.renderCount = 0;
+
+        mImage = std::unique_ptr<TestPluginImage>(
+            new TestPluginImage(inputImage.width, inputImage.height, GL_TEXTURE_RECTANGLE));
+        mOutputImageInfo.textureId = mImage->getTextureId();
+        mOutputImageInfo.width = mImage->getWidth();
+        mOutputImageInfo.height = mImage->getHeight();
+        mOutputImageInfo.numChannels = 4;
+        mOutputImageInfo.dataType = SBImageInfo::type_uint8;
+        mOutputImageInfo.textureType = SBImageInfo::texture_rectangle;
+        mOutputImageInfo.renderCount = 0;
+
+        mImage2d = std::unique_ptr<TestPluginImage>(
+            new TestPluginImage(inputImage.width, inputImage.height, GL_TEXTURE_2D));
+        mOutputImageInfo2d = mOutputImageInfo;
+        mOutputImageInfo2d.textureId = mImage2d->getTextureId();
+        mOutputImageInfo2d.textureType = SBImageInfo::texture_2d;
+
         mRenderedForChangeId = 0;
     }
-    if (inputImage.renderCount == mRenderedForChangeId) {
-        return;
+    if (inputImage.renderCount != mRenderedForChangeId) {
+        mRenderedForChangeId = inputImage.renderCount;
+
+        mImage->renderBegin();
+        mShader->render(inputImage.textureId);
+        mImage->renderEnd();
+        mOutputImageInfo.renderCount++;
+
+        mImage2d->renderBegin();
+        mShader->render(inputImage.textureId);
+        mImage2d->renderEnd();
+        mOutputImageInfo2d.renderCount++;
     }
-    mRenderedForChangeId = inputImage.renderCount;
-    mImage->renderBegin();
-    mShader->render(inputImage.textureId);
-    mImage->renderEnd();
-    outputImage.renderCount++;
+    mHost->setOutputParameter("Output Image", {.imageInfo = mOutputImageInfo});
+    mHost->setOutputParameter("Output Image 2d", {.imageInfo = mOutputImageInfo2d});
 }
 
 void TestPlugin::processMessages()
 {
-    if (!mMessanger) {
-        printf("Error: No messanger\n");
-        return;
-    }
-    while (SBMessage msg = mMessanger->nextMessage()) {
-        std::string msgStr(msg.ptr, msg.size);
+    while (int size = mHost->getNextMessengerMessageSize()) {
+        std::string msgStr;
+        msgStr.resize(size);
+        mHost->popNextMessengerMessage(msgStr.data(), msgStr.size());
         if (msgStr == "GetState") {
             emitState();
             continue;
         }
         if (msgStr == "Increment") {
-            setCounter(mCounter + 1);
+            setCounter(mPrefix, mCounter + 1);
             emitState();
         }
     }
 }
 
-void TestPlugin::setCounter(int counter)
+void TestPlugin::setCounter(std::string prefix, int counter)
 {
     mCounter = counter;
-    mCounterString = std::to_string(mCounter);
+    mCounterString = prefix + std::to_string(mCounter);
 }
 
 void TestPlugin::emitState()
 {
-    mMessanger->sendMessage({mCounterString.c_str(), mCounterString.size()});
+    mHost->sendMessengerMessage(mCounterString.c_str(), mCounterString.size());
 }

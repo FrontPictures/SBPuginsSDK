@@ -21,7 +21,7 @@ TestShader::TestShader()
     glShaderSource(mVertexShader, 1, &vertexShaderStrPtr, nullptr);
     glCompileShader(mVertexShader);
 
-    GLint success;
+    GLint success = 0;
     glGetShaderiv(mVertexShader,GL_COMPILE_STATUS,&success);
     if(!success){
         printf("compile vertex shader failed\n");
@@ -33,16 +33,16 @@ TestShader::TestShader()
 
     // compile FRAGMENT shader
 
-    std::string fragmentShaderStr=
+    std::string fragmentShaderStr =
         R"(
-            #version 330 core
-            layout(location=0)out vec4 res;
-            uniform sampler2DRect tex;
-            in vec2 texturePos;
-            void main() {
-                res = texture(tex, vec2(texturePos.x, 1.0 - texturePos.y) * textureSize(tex));
-            }
-            )";
+#version 330 core
+layout(location=0)out vec4 res;
+in vec2 texturePos;
+uniform sampler2DRect tex;
+void main() {
+    res = texture(tex, vec2(texturePos.x, 1.0 - texturePos.y) * textureSize(tex));
+}
+)";
 
     mFragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     char* fragmentShaderStrPtr=&fragmentShaderStr[0];

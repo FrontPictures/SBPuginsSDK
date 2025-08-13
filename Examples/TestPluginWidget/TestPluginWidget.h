@@ -10,22 +10,22 @@
 #define PLUGIN_EXPORTS __attribute__((visibility("default")))
 #endif
 
-class SBMessanger;
+class SBMessenger;
 struct SBClientInfo;
 
-extern "C" PLUGIN_EXPORTS QWidget *createSBPluginWidget(SBMessanger *messanger,
-                                                        const SBClientInfo &info);
+extern "C" PLUGIN_EXPORTS QWidget *createSBPluginWidget2(SBMessenger *messenger,
+                                                         const SBClientInfo &info);
 
 class TestPluginWidget : public QWidget
 {
     Q_OBJECT
 public:
-    TestPluginWidget(SBMessanger *messanger, const SBClientInfo &info);
+    TestPluginWidget(SBMessenger *messenger, const SBClientInfo &info);
 
 private:
     void processMessages();
 
-    SBMessanger *mMessanger = nullptr;
+    SBMessenger *mMessenger = nullptr;
     QLabel *mStateLabel = nullptr;
 };
 

@@ -5,13 +5,13 @@
 #include <QTimer>
 #include <QPushButton>
 
-QWidget *createSBPluginWidget(SBMessanger *messanger, const SBClientInfo &info)
+QWidget *createSBPluginWidget2(SBMessenger *messenger, const SBClientInfo &info)
 {
-    return new TestPluginWidget(messanger, info);
+    return new TestPluginWidget(messenger, info);
 }
 
-TestPluginWidget::TestPluginWidget(SBMessanger *messanger, const SBClientInfo &info)
-    : mMessanger(messanger)
+TestPluginWidget::TestPluginWidget(SBMessenger *messenger, const SBClientInfo &info)
+    : mMessenger(messenger)
 {
     printf("Connected server IP address: %s\n", info.connectedServerIp);
 
@@ -19,16 +19,18 @@ TestPluginWidget::TestPluginWidget(SBMessanger *messanger, const SBClientInfo &i
     layout->addStretch();
     layout->addWidget(new QLabel("Test Plugin Widget"));
 
-    if (!mMessanger) {
-        printf("Error: No messanger\n");
+    if (!mMessenger) {
+        printf("Error: No messenger\n");
         return;
     }
 
-    mMessanger->sendMessage("GetState");
+    std::string getStateMsg = "GetState";
+    mMessenger->sendMessengerMessage(getStateMsg.c_str(), getStateMsg.size());
 
     auto *button = new QPushButton("Increment");
-    connect(button, &QPushButton::clicked, this, [this](){
-        mMessanger->sendMessage("Increment");
+    connect(button, &QPushButton::clicked, this, [this]() {
+        std::string incrementMsg = "Increment";
+        mMessenger->sendMessengerMessage(incrementMsg.c_str(), incrementMsg.size());
     });
     layout->addWidget(button);
 
@@ -49,8 +51,10 @@ TestPluginWidget::TestPluginWidget(SBMessanger *messanger, const SBClientInfo &i
 
 void TestPluginWidget::processMessages()
 {
-    while (auto msg = mMessanger->nextMessage()) {
-        mStateLabel->setText(QString("Current value: %1")
-                                 .arg(QString::fromStdString(std::string(msg.ptr, msg.size))));
+    while (int size = mMessenger->getNextMessengerMessageSize()) {
+        std::string msg;
+        msg.resize(size);
+        mMessenger->popNextMessengerMessage(msg.data(), msg.size());
+        mStateLabel->setText(QString("Current value: %1").arg(QString::fromStdString(msg)));
     }
 }
